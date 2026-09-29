@@ -1,0 +1,203 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import metaData from '../../../data/meta.json';
+import { withBase } from '../../lib/url';
+
+const dataVersion = metaData.fetchedAt;
+---
+
+<Layout
+  title="寵物食品詳情 - 寵物食品資訊"
+  description="寵物食品申報資訊、原料、營養成分、適用寵物與廠商查詢。"
+>
+  <div id="food-app" data-version={dataVersion}>
+    <div id="state-loading" style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <div class="card skeleton-card" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+        <div class="skeleton-line" style="width: 180px; height: 24px;"></div>
+        <div class="skeleton-line" style="width: 60%; height: 32px;"></div>
+        <div class="skeleton-line" style="width: 40%; height: 20px;"></div>
+      </div>
+      <noscript>
+        <div class="card" style="background-color: #fef2f2; border: 1px solid #f87171; padding: 1.5rem; text-align: center; color: #991b1b;">
+          <p style="font-weight: 700; font-size: 1.1rem; margin-bottom: 0.5rem;">本頁面需要啟用 JavaScript</p>
+          <p style="font-size: 0.9rem;">食品詳情採用即時資料讀取，請在瀏覽器設定中開啟 JavaScript 後重新整理頁面。</p>
+        </div>
+      </noscript>
+    </div>
+
+    <div id="state-not-found" class="card" style="display: none; padding: 2.5rem; text-align: center; color: #4b5563;">
+      <h2 style="font-size: 1.35rem; color: #111827; margin-bottom: 0.5rem;">找不到指定的寵物食品</h2>
+      <p style="font-size: 0.95rem; margin-bottom: 1.5rem;">
+        您所查詢的食品序號不存在、網址參數有誤，或該食品已自資料庫移除。
+      </p>
+      <a href={withBase('/')} class="btn btn-primary" style="display: inline-block; padding: 0.5rem 1.25rem;">
+        返回食品搜尋
+      </a>
+    </div>
+
+    <div id="state-error" class="card" style="display: none; padding: 2.5rem; text-align: center; color: #991b1b; background-color: #fef2f2; border: 1px solid #fecaca;">
+      <h2 style="font-size: 1.35rem; color: #991b1b; margin-bottom: 0.5rem;">資料載入失敗</h2>
+      <p style="font-size: 0.95rem; color: #7f1d1d; margin-bottom: 1.5rem;">
+        網路連線中斷或伺服器異常，無法讀取食品資料分片。
+      </p>
+      <div style="display: flex; justify-content: center; gap: 1rem;">
+        <button id="retry-btn" class="btn btn-primary" style="padding: 0.5rem 1.25rem;">
+          重新載入
+        </button>
+        <a href={withBase('/')} class="btn btn-secondary" style="padding: 0.5rem 1.25rem;">
+          返回搜尋首頁
+        </a>
+      </div>
+    </div>
+
+    <div id="state-ready" style="display: none;"></div>
+  </div>
+
+  <style>
+    .skeleton-line {
+      background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 37%, #f3f4f6 63%);
+      background-size: 400% 100%;
+      animation: skeleton-loading 1.4s ease infinite;
+      border-radius: 4px;
+    }
+    @keyframes skeleton-loading {
+      0% { background-position: 100% 50%; }
+      100% { background-position: 0 50%; }
+    }
+    .dl-row {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 0.75rem;
+      padding: 0.6rem 0;
+      border-bottom: 1px dashed #e5e7eb;
+      font-size: 0.92rem;
+    }
+    .dl-row dt { color: #6b7280; font-weight: 600; }
+    .dl-row dd { color: #111827; white-space: pre-line; margin: 0; }
+    @media (max-width: 640px) {
+      .dl-row { grid-template-columns: 1fr; gap: 0.15rem; }
+    }
+  </style>
+
+  <script>
+    import { shardOf, shardPath, FOOD_SHARDS } from '../../lib/shard';
+    import { dataUrl } from '../../lib/url';
+    import { renderVendorLink } from '../../lib/render-vendor';
+    import { escapeHtml } from '../../lib/escape-html';
+
+    const appEl = document.getElementById('food-app');
+    const dataVersion = appEl?.getAttribute('data-version') || undefined;
+
+    const stateLoading = document.getElementById('state-loading');
+    const stateNotFound = document.getElementById('state-not-found');
+    const stateError = document.getElementById('state-error');
+    const stateReady = document.getElementById('state-ready');
+
+    function showState(state) {
+      if (stateLoading) stateLoading.style.display = state === 'loading' ? 'flex' : 'none';
+      if (stateNotFound) stateNotFound.style.display = state === 'notFound' ? 'block' : 'none';
+      if (stateError) stateError.style.display = state === 'error' ? 'block' : 'none';
+      if (stateReady) stateReady.style.display = state === 'ready' ? 'block' : 'none';
+    }
+
+    function fieldRow(label, value) {
+      if (!value) return '';
+      return `<div class="dl-row"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+    }
+
+    function isInCompare(id) {
+      try {
+        const raw = localStorage.getItem('petfood_compare_list');
+        const list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) && list.includes(id);
+      } catch { return false; }
+    }
+
+    async function load() {
+      const params = new URLSearchParams(window.location.search);
+      const id = (params.get('id') || '').trim();
+      if (!id) { showState('notFound'); return; }
+
+      try {
+        const shardIdx = shardOf(id, FOOD_SHARDS);
+        const res = await fetch(dataUrl(shardPath('food', shardIdx), dataVersion));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const shard = await res.json();
+        const food = shard[id];
+        if (!food) { showState('notFound'); return; }
+
+        document.title = `${food.name} - 寵物食品資訊`;
+
+        const petTags = (food.pets || []).map(t =>
+          `<span class="badge" style="background: var(--primary-light); color: var(--primary-hover); border: 1px solid var(--border); margin-right: 0.3rem;">${escapeHtml(t)}</span>`
+        ).join('');
+
+        const inCompare = isInCompare(food.id);
+
+        stateReady.innerHTML = `
+          <div class="card" style="margin-bottom: 1rem;">
+            <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+              <span class="badge" style="background:#f3f4f6; color:#374151;">${escapeHtml(food.item || '')}</span>
+              ${petTags}
+              <span style="font-size:0.8rem; color:#6b7280;">${escapeHtml(food.id)}</span>
+            </div>
+            <h1 style="font-size: 1.5rem; color: #111827; margin-bottom: 0.75rem;">${escapeHtml(food.name)}</h1>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.85rem; cursor:pointer; background:#f9fafb; padding:0.4rem 0.7rem; border-radius:6px; border:1px solid #e5e7eb;">
+                <input type="checkbox" id="detail-compare-chk" ${inCompare ? 'checked' : ''} />
+                <span>加入比較</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="card">
+            <dl>
+              ${fieldRow('食品種類', food.item)}
+              ${fieldRow('產品來源', food.source)}
+              ${fieldRow('包裝規格', food.packageSpec)}
+              ${fieldRow('主要原料及添加物', food.materials)}
+              ${fieldRow('主要營養成分及含量', food.nutrients)}
+              ${fieldRow('適用寵物種類', food.usagePets)}
+              ${fieldRow('使用方法', food.usageMethod)}
+              ${fieldRow('保存方法', food.storageMethod)}
+              ${fieldRow('原產地', food.origin)}
+              <div class="dl-row"><dt>廠商名稱</dt><dd>${renderVendorLink(food.vendorName || '', !!food.vendorRegistered)}</dd></div>
+            </dl>
+          </div>
+        `;
+
+        const chk = document.getElementById('detail-compare-chk');
+        chk?.addEventListener('change', (e) => {
+          try {
+            let list = JSON.parse(localStorage.getItem('petfood_compare_list') || '[]');
+            if (!Array.isArray(list)) list = [];
+            if (e.target.checked) {
+              if (list.length >= 3) {
+                alert('比較清單上限為 3 項食品');
+                e.target.checked = false;
+                return;
+              }
+              if (!list.includes(food.id)) list.push(food.id);
+            } else {
+              list = list.filter(s => s !== food.id);
+            }
+            localStorage.setItem('petfood_compare_list', JSON.stringify(list));
+            window.dispatchEvent(new Event('compare-updated'));
+          } catch {}
+        });
+
+        showState('ready');
+      } catch (e) {
+        console.error('Failed to load food shard:', e);
+        showState('error');
+      }
+    }
+
+    document.getElementById('retry-btn')?.addEventListener('click', () => {
+      showState('loading');
+      load();
+    });
+
+    load();
+  </script>
+</Layout>

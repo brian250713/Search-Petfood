@@ -1,0 +1,112 @@
+---
+import Layout from '../layouts/Layout.astro';
+import summariesData from '../../data/vendors-summary.json';
+import { vendorUrl } from '../lib/url';
+
+const summaries = summariesData as { name: string; typeLabel: string; country: string; zone: string; foodCount: number }[];
+const total = summaries.length;
+const counties: string[] = [...new Set(summaries.map((s) => s.country).filter(Boolean))].sort();
+---
+
+<Layout title="業者總覽 - 寵物食品資訊" description="全部寵物食品業者一覽，可依名稱、縣市篩選與排序。">
+  <div id="vendors-app" style="display: flex; flex-direction: column; gap: 1rem;">
+    <div class="card">
+      <h1 style="font-size: 1.5rem; color: var(--primary-hover); margin-bottom: 0.5rem;">業者總覽</h1>
+      <p style="font-size: 0.9rem; color: #4b5563; margin-bottom: 1rem;">
+        顯示 <strong id="vendor-visible-count">{total}</strong> / {total.toLocaleString()} 家
+      </p>
+      <div style="display: grid; grid-template-columns: 1fr 180px 180px; gap: 0.75rem;">
+        <input id="vendor-query" type="text" class="input-text" placeholder="依業者名稱快速過濾..." autocomplete="off" />
+        <select id="vendor-county" class="input-text">
+          <option value="">全部縣市</option>
+          {counties.map((c) => <option value={c}>{c}</option>)}
+        </select>
+        <select id="vendor-sort" class="input-text">
+          <option value="food">食品數多到少</option>
+          <option value="name">名稱排序</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="vendors-list" style="display: flex; flex-direction: column; gap: 0.6rem;"></div>
+
+    <script type="application/json" id="vendors-data" set:html={JSON.stringify(summaries)} />
+  </div>
+
+  <style>
+    @media (max-width: 768px) {
+      #vendors-app .card > div:last-child,
+      #vendors-app > div:first-child > div:last-child {
+        grid-template-columns: 1fr !important;
+      }
+    }
+    .vendor-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+  </style>
+
+  <script>
+    import { escapeHtml } from '../lib/escape-html';
+    import { vendorUrl } from '../lib/url';
+    import { matchVendor, compareVendors } from '../lib/vendor';
+
+    const summaries = JSON.parse(document.getElementById('vendors-data')?.textContent || '[]');
+
+    const listEl = document.getElementById('vendors-list');
+    const countEl = document.getElementById('vendor-visible-count');
+    const queryEl = document.getElementById('vendor-query');
+    const countyEl = document.getElementById('vendor-county');
+    const sortEl = document.getElementById('vendor-sort');
+
+    function render() {
+      const options = { query: queryEl.value, country: countyEl.value };
+      const sortKey = sortEl.value === 'name' ? 'name' : 'food';
+      const matched = summaries.filter((s) => matchVendor(s.name, s.country, options));
+      matched.sort((a, b) => compareVendors(a, b, sortKey));
+
+      countEl.textContent = matched.length.toLocaleString();
+
+      if (matched.length === 0) {
+        listEl.innerHTML = '<div class="card" style="padding: 1.5rem; text-align: center; color: #6b7280;">沒有符合條件的業者</div>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      for (const s of matched.slice(0, 500)) {
+        const card = document.createElement('div');
+        card.className = 'card vendor-card';
+        card.style.padding = '0.8rem 1.1rem';
+        card.innerHTML = `
+          <div>
+            <a href="${vendorUrl(s.name)}" style="font-weight: 700; color: #111827;">${escapeHtml(s.name)}</a>
+            <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.15rem;">
+              ${escapeHtml(s.typeLabel || '')}${s.country ? ` ｜ ${escapeHtml(s.country)}${escapeHtml(s.zone || '')}` : ''}
+            </div>
+          </div>
+          <span class="badge" style="background: var(--primary-light); color: var(--primary-hover); border: 1px solid var(--border);">${s.foodCount} 項食品</span>
+        `;
+        listEl.appendChild(card);
+      }
+      if (matched.length > 500) {
+        const more = document.createElement('p');
+        more.style.cssText = 'text-align:center; color:#6b7280; font-size:0.85rem;';
+        more.textContent = `僅顯示前 500 家，請縮小過濾條件（共 ${matched.length.toLocaleString()} 家符合）`;
+        listEl.appendChild(more);
+      }
+    }
+
+    let debounce = null;
+    queryEl.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(render, 150);
+    });
+    countyEl.addEventListener('change', render);
+    sortEl.addEventListener('change', render);
+
+    render();
+  </script>
+</Layout>

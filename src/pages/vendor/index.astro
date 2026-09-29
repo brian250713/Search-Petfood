@@ -1,0 +1,227 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import metaData from '../../../data/meta.json';
+import { withBase } from '../../lib/url';
+
+const dataVersion = metaData.fetchedAt;
+---
+
+<Layout
+  title="寵物食品業者 - 寵物食品資訊"
+  description="寵物食品業者登記資料與名下食品查詢。"
+>
+  <div id="vendor-app" data-version={dataVersion}>
+    <div id="state-loading" style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <div class="card skeleton-card" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+        <div class="skeleton-line" style="width: 180px; height: 24px;"></div>
+        <div class="skeleton-line" style="width: 60%; height: 32px;"></div>
+        <div class="skeleton-line" style="width: 40%; height: 20px;"></div>
+      </div>
+      <noscript>
+        <div class="card" style="background-color: #fef2f2; border: 1px solid #f87171; padding: 1.5rem; text-align: center; color: #991b1b;">
+          <p style="font-weight: 700; font-size: 1.1rem; margin-bottom: 0.5rem;">本頁面需要啟用 JavaScript</p>
+        </div>
+      </noscript>
+    </div>
+
+    <div id="state-not-found" class="card" style="display: none; padding: 2.5rem; text-align: center; color: #4b5563;">
+      <h2 style="font-size: 1.35rem; color: #111827; margin-bottom: 0.5rem;">找不到此業者</h2>
+      <p style="font-size: 0.95rem; margin-bottom: 1.5rem;">業者名稱不存在或網址參數有誤。</p>
+      <a href={withBase('/vendors')} class="btn btn-primary" style="display: inline-block; padding: 0.5rem 1.25rem;">
+        前往業者總覽
+      </a>
+    </div>
+
+    <div id="state-error" class="card" style="display: none; padding: 2.5rem; text-align: center; color: #991b1b; background-color: #fef2f2; border: 1px solid #fecaca;">
+      <h2 style="font-size: 1.35rem; color: #991b1b; margin-bottom: 0.5rem;">資料載入失敗</h2>
+      <p style="font-size: 0.95rem; color: #7f1d1d; margin-bottom: 1.5rem;">網路連線中斷或伺服器異常，無法讀取業者資料分片。</p>
+      <div style="display: flex; justify-content: center; gap: 1rem;">
+        <button id="retry-btn" class="btn btn-primary" style="padding: 0.5rem 1.25rem;">重新載入</button>
+        <a href={withBase('/vendors')} class="btn btn-secondary" style="padding: 0.5rem 1.25rem;">業者總覽</a>
+      </div>
+    </div>
+
+    <div id="state-ready" style="display: none; flex-direction: column; gap: 1rem;"></div>
+  </div>
+
+  <style>
+    .skeleton-line {
+      background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 37%, #f3f4f6 63%);
+      background-size: 400% 100%;
+      animation: skeleton-loading 1.4s ease infinite;
+      border-radius: 4px;
+    }
+    @keyframes skeleton-loading {
+      0% { background-position: 100% 50%; }
+      100% { background-position: 0 50%; }
+    }
+  </style>
+
+  <script>
+    import { shardOf, shardPath, VENDOR_SHARDS } from '../../lib/shard';
+    import { dataUrl, foodUrl } from '../../lib/url';
+    import { escapeHtml } from '../../lib/escape-html';
+
+    const appEl = document.getElementById('vendor-app');
+    const dataVersion = appEl?.getAttribute('data-version') || undefined;
+
+    const stateLoading = document.getElementById('state-loading');
+    const stateNotFound = document.getElementById('state-not-found');
+    const stateError = document.getElementById('state-error');
+    const stateReady = document.getElementById('state-ready');
+
+    let allFoods = [];
+    let currentItem = '';
+
+    function showState(state) {
+      if (stateLoading) stateLoading.style.display = state === 'loading' ? 'flex' : 'none';
+      if (stateNotFound) stateNotFound.style.display = state === 'notFound' ? 'block' : 'none';
+      if (stateError) stateError.style.display = state === 'error' ? 'block' : 'none';
+      if (stateReady) stateReady.style.display = state === 'ready' ? 'flex' : 'none';
+    }
+
+    function getCompareList() {
+      try {
+        const raw = localStorage.getItem('petfood_compare_list');
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    }
+
+    function toggleCompare(id, isChecked) {
+      try {
+        let list = getCompareList();
+        if (!Array.isArray(list)) list = [];
+        if (isChecked) {
+          if (list.length >= 3) {
+            alert('比較清單上限為 3 項食品');
+            const cb = document.querySelector(`.compare-chk[data-id="${id}"]`);
+            if (cb) cb.checked = false;
+            return;
+          }
+          if (!list.includes(id)) list.push(id);
+        } else {
+          list = list.filter(s => s !== id);
+        }
+        localStorage.setItem('petfood_compare_list', JSON.stringify(list));
+        window.dispatchEvent(new Event('compare-updated'));
+      } catch {}
+    }
+
+    function renderFoods() {
+      const container = document.getElementById('vendor-foods');
+      if (!container) return;
+      const compareList = getCompareList();
+      const items = currentItem ? allFoods.filter(f => f.item === currentItem) : allFoods;
+
+      document.getElementById('vendor-food-count').textContent = items.length.toLocaleString();
+
+      if (items.length === 0) {
+        container.innerHTML = '<div class="card" style="padding: 1.5rem; text-align: center; color: #6b7280;">此篩選條件下無食品</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      for (const f of items) {
+        const isCompared = compareList.includes(f.id);
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.cssText = 'display:flex; flex-direction:column; gap:0.5rem;';
+        const petTags = (f.pets || []).map(t =>
+          `<span class="badge" style="background: var(--primary-light); color: var(--primary-hover); border: 1px solid var(--border);">${escapeHtml(t)}</span>`
+        ).join(' ');
+        card.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
+            <div>
+              <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.25rem;">
+                <span class="badge" style="background:#f3f4f6; color:#374151;">${escapeHtml(f.item || '')}</span>
+                ${petTags}
+                <span style="font-size:0.8rem; color:#6b7280;">${escapeHtml(f.id)}</span>
+              </div>
+              <a href="${foodUrl(f.id)}" style="font-size:1.05rem; font-weight:700; color:#111827; text-decoration:none;">${escapeHtml(f.name)}</a>
+              <div style="font-size:0.85rem; color:#4b5563; margin-top:0.25rem;">原產地：${escapeHtml(f.origin || '')} ｜ 來源：${escapeHtml(f.source || '')}</div>
+            </div>
+            <label style="display:flex; align-items:center; gap:0.3rem; font-size:0.8rem; cursor:pointer; background:#f9fafb; padding:0.3rem 0.5rem; border-radius:4px; border:1px solid #e5e7eb; white-space:nowrap;">
+              <input type="checkbox" class="compare-chk" data-id="${escapeHtml(f.id)}" ${isCompared ? 'checked' : ''} />
+              <span>比較</span>
+            </label>
+          </div>
+        `;
+        card.querySelector('.compare-chk')?.addEventListener('change', (e) => toggleCompare(f.id, e.target.checked));
+        container.appendChild(card);
+      }
+    }
+
+    async function load() {
+      const params = new URLSearchParams(window.location.search);
+      const name = (params.get('name') || '').trim().replace(/\s+/g, ' ');
+      if (!name) { showState('notFound'); return; }
+
+      try {
+        const shardIdx = shardOf(name, VENDOR_SHARDS);
+        const res = await fetch(dataUrl(shardPath('vendor', shardIdx), dataVersion));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const shard = await res.json();
+        const entry = shard[name];
+        if (!entry) { showState('notFound'); return; }
+
+        document.title = `${entry.vendor.name} - 寵物食品業者資訊`;
+
+        const v = entry.vendor;
+        allFoods = entry.foods || [];
+        const items = [...new Set(allFoods.map(f => f.item).filter(Boolean))].sort();
+
+        stateReady.innerHTML = `
+          <div class="card">
+            <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+              <span class="badge" style="background: var(--primary-light); color: var(--primary-hover); border: 1px solid var(--border);">${escapeHtml(v.typeLabel || '')}</span>
+              <span style="font-size:0.85rem; color:#6b7280;">${escapeHtml(v.country || '')}${escapeHtml(v.zone || '')}</span>
+            </div>
+            <h1 style="font-size: 1.5rem; color: #111827; margin-bottom: 0.5rem;">${escapeHtml(v.name)}</h1>
+            <div style="font-size: 0.9rem; color: #374151; display: flex; flex-direction: column; gap: 0.25rem;">
+              ${v.owner ? `<div>負責人：${escapeHtml(v.owner)}</div>` : ''}
+              ${v.tel ? `<div>電話：${escapeHtml(v.tel)}</div>` : ''}
+              ${v.address ? `<div>地址：${escapeHtml(v.address)}</div>` : ''}
+              ${v.contact ? `<div>聯絡人：${escapeHtml(v.contact)}</div>` : ''}
+            </div>
+          </div>
+
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
+              <h2 style="font-size: 1.1rem; color: #111827;">名下食品（<span id="vendor-food-count">${allFoods.length}</span> 筆）</h2>
+              <select id="vendor-item-filter" class="input-text" style="width: auto; font-size: 0.85rem; padding: 0.35rem;">
+                <option value="">全部種類</option>
+                ${items.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('')}
+              </select>
+            </div>
+            <div id="vendor-foods" style="display: flex; flex-direction: column; gap: 0.75rem;"></div>
+          </div>
+        `;
+
+        document.getElementById('vendor-item-filter')?.addEventListener('change', (e) => {
+          currentItem = e.target.value;
+          renderFoods();
+        });
+
+        renderFoods();
+        showState('ready');
+      } catch (e) {
+        console.error('Failed to load vendor shard:', e);
+        showState('error');
+      }
+    }
+
+    document.getElementById('retry-btn')?.addEventListener('click', () => {
+      showState('loading');
+      load();
+    });
+
+    window.addEventListener('compare-updated', () => {
+      const list = getCompareList();
+      document.querySelectorAll('.compare-chk').forEach(chk => {
+        chk.checked = list.includes(chk.getAttribute('data-id'));
+      });
+    });
+
+    load();
+  </script>
+</Layout>

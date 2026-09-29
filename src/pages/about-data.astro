@@ -1,0 +1,44 @@
+---
+import Layout from '../layouts/Layout.astro';
+import metaData from '../../data/meta.json';
+
+const fetchDate = metaData.fetchedAt ? metaData.fetchedAt.split('T')[0] : '2026-09-29';
+---
+
+<Layout title="關於資料 - 寵物食品資訊" description="資料來源、授權、處理方式與免責聲明。">
+  <div class="card" style="display: flex; flex-direction: column; gap: 1rem;">
+    <h1 style="font-size: 1.5rem; color: var(--primary-hover);">關於資料</h1>
+
+    <section>
+      <h2 style="font-size: 1.1rem; margin-bottom: 0.25rem;">資料來源</h2>
+      <ul style="font-size: 0.92rem; color: #374151; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.25rem;">
+        <li>農業部「寵物食品資料」開放資料（食品序號、品名、種類、來源、包裝、原料、營養成分、適用寵物、使用/保存方法、原產地、廠商名稱）</li>
+        <li>農業部「寵物食品業者資料」開放資料（廠商分類、公司名稱、負責人、電話、地址、聯絡人、縣市、行政區）</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 style="font-size: 1.1rem; margin-bottom: 0.25rem;">授權</h2>
+      <p style="font-size: 0.92rem; color: #374151;">
+        遵循<a href="https://data.gov.tw/license" target="_blank" rel="noopener noreferrer">政府資料開放授權條款</a>。
+      </p>
+    </section>
+
+    <section>
+      <h2 style="font-size: 1.1rem; margin-bottom: 0.25rem;">資料處理</h2>
+      <ul style="font-size: 0.92rem; color: #374151; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.25rem;">
+        <li>本站資料擷取於 {fetchDate}，共 {metaData.foodRecords.toLocaleString()} 筆食品、{metaData.vendorRecords.toLocaleString()} 家業者。</li>
+        <li>適用寵物（犬/貓）由程式依申報文字自動推斷，原始文字一併保留顯示。</li>
+        <li>食品廠商名稱去除【】前綴後與業者登記名稱串連；未能串連者以純文字顯示。</li>
+        <li>食品筆數恰為 9999 時可能為平台截斷上限，建置日誌會標註警告。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 style="font-size: 1.1rem; margin-bottom: 0.25rem;">免責聲明</h2>
+      <p style="font-size: 0.92rem; color: #374151;">
+        本站內容整理自政府開放資料，適用寵物歸類為程式自動推斷、可能有誤，僅供查詢參考，不構成飼養或醫療建議。選購與餵食請諮詢獸醫師，並以主管機關公告為準。
+      </p>
+    </section>
+  </div>
+</Layout>

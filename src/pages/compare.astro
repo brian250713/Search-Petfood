@@ -1,0 +1,114 @@
+---
+import Layout from '../layouts/Layout.astro';
+import metaData from '../../data/meta.json';
+
+const dataVersion = metaData.fetchedAt;
+---
+
+<Layout title="食品比較 - 寵物食品資訊" description="並排比較最多三項寵物食品的原料、營養成分與原產地。">
+  <div id="compare-app" data-version={dataVersion} style="display: flex; flex-direction: column; gap: 1rem;">
+    <div class="card">
+      <h1 style="font-size: 1.5rem; color: var(--primary-hover); margin-bottom: 0.25rem;">食品並排比較</h1>
+      <p style="font-size: 0.85rem; color: #6b7280;">此頁網址可分享，重開即還原相同比較表。從搜尋結果、食品詳情或業者頁勾選最多 3 項加入。</p>
+    </div>
+    <div id="compare-body">
+      <div class="card" style="padding: 2rem; text-align: center; color: #6b7280;">載入中...</div>
+    </div>
+  </div>
+
+  <script>
+    import { shardOf, shardPath, FOOD_SHARDS } from '../lib/shard';
+    import { dataUrl, foodUrl, compareUrl } from '../lib/url';
+    import { renderVendorLink } from '../lib/render-vendor';
+    import { escapeHtml } from '../lib/escape-html';
+
+    const appEl = document.getElementById('compare-app');
+    const dataVersion = appEl?.getAttribute('data-version') || undefined;
+    const body = document.getElementById('compare-body');
+
+    function cell(value) {
+      return `<td style="white-space: pre-line;">${value ? escapeHtml(value) : '—'}</td>`;
+    }
+
+    async function load() {
+      // 優先用網址參數；無參數時用本機比較清單
+      const params = new URLSearchParams(window.location.search);
+      let ids = (params.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 3);
+      if (ids.length === 0) {
+        try {
+          const raw = localStorage.getItem('petfood_compare_list');
+          const list = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(list)) ids = list.slice(0, 3);
+        } catch {}
+        if (ids.length > 0) {
+          window.history.replaceState({}, '', compareUrl(ids));
+        }
+      }
+
+      if (ids.length === 0) {
+        body.innerHTML = '<div class="card" style="padding: 2rem; text-align: center; color: #6b7280;">尚未選擇食品，請先到搜尋或業者頁勾選「比較」。</div>';
+        return;
+      }
+
+      // 依分片分組，一次抓一片
+      const byShard = new Map();
+      ids.forEach((id, order) => {
+        const idx = shardOf(id, FOOD_SHARDS);
+        if (!byShard.has(idx)) byShard.set(idx, []);
+        byShard.get(idx).push({ id, order });
+      });
+
+      const found = new Array(ids.length).fill(null);
+      const missing = [];
+      try {
+        await Promise.all([...byShard.entries()].map(async ([idx, items]) => {
+          const res = await fetch(dataUrl(shardPath('food', idx), dataVersion));
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const shard = await res.json();
+          for (const { id, order } of items) {
+            if (shard[id]) found[order] = shard[id];
+            else missing.push(id);
+          }
+        }));
+      } catch (e) {
+        console.error('Failed to load compare shards:', e);
+        body.innerHTML = '<div class="card" style="padding: 2rem; text-align: center; color: #991b1b;">資料載入失敗，請重新整理再試。</div>';
+        return;
+      }
+
+      const rows = [
+        ['品名', (f) => `<a href="${foodUrl(f.id)}">${escapeHtml(f.name)}</a>`],
+        ['食品種類', (f) => escapeHtml(f.item || '')],
+        ['產品來源', (f) => escapeHtml(f.source || '')],
+        ['包裝規格', (f) => escapeHtml(f.packageSpec || '')],
+        ['主要原料及添加物', (f) => escapeHtml(f.materials || '')],
+        ['營養成分', (f) => escapeHtml(f.nutrients || '')],
+        ['適用寵物', (f) => escapeHtml(f.usagePets || '')],
+        ['原產地', (f) => escapeHtml(f.origin || '')],
+        ['廠商', (f) => renderVendorLink(f.vendorName || '', !!f.vendorRegistered)],
+      ];
+
+      let html = '<div class="card table-responsive"><table><thead><tr><th style="min-width: 110px;">項目</th>';
+      found.forEach((f, i) => {
+        html += `<th>${f ? escapeHtml(f.name) : `未知（${escapeHtml(ids[i])}）`}</th>`;
+      });
+      html += '</tr></thead><tbody>';
+      for (const [label, get] of rows) {
+        html += `<tr><th>${escapeHtml(label)}</th>`;
+        for (const f of found) {
+          html += f ? `<td style="white-space: pre-line;">${get(f)}</td>` : '<td>—</td>';
+        }
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+
+      if (missing.length > 0) {
+        html += `<p style="font-size:0.85rem; color:#991b1b;">以下序號找不到資料，已略過：${missing.map(escapeHtml).join('、')}</p>`;
+      }
+
+      body.innerHTML = html;
+    }
+
+    load();
+  </script>
+</Layout>

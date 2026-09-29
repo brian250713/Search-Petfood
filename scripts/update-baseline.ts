@@ -6,9 +6,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 
-/** CI 發佈成功後更新筆數基準 */
-const food = JSON.parse(fs.readFileSync(path.join(projectRoot, 'data', 'products.json'), 'utf8'));
-const vendors = JSON.parse(fs.readFileSync(path.join(projectRoot, 'data', 'vendors.json'), 'utf8'));
+/** CI 發佈成功後更新筆數基準（以 raw 抓取筆數為準，與 fetch 防呆對照一致） */
+const food = JSON.parse(fs.readFileSync(path.join(projectRoot, 'data', 'raw-food.json'), 'utf8'));
+const vendors = JSON.parse(fs.readFileSync(path.join(projectRoot, 'data', 'raw-vendors.json'), 'utf8'));
 
 const baseline = {
   foodRecords: food.length,

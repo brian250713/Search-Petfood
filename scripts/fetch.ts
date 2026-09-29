@@ -32,7 +32,7 @@ async function main() {
     const { food, vendors } = await fetchAllSources({
       baselineFood,
       baselineVendors,
-      onProgress: (label) => console.log(`[fetch] 抓取 ${label} 中...`),
+      onProgress: (label, count) => console.log(`[fetch] 抓取 ${label} 中...累積 ${count} 筆`),
     });
 
     console.log(`[fetch] 抓取完成並通過防呆驗證！食品 ${food.length} 筆，業者 ${vendors.length} 筆。`);

@@ -125,7 +125,39 @@ export interface FetchAllOptions {
   baselineFood?: number;
   baselineVendors?: number;
   fetchFn?: typeof fetch;
-  onProgress?: (label: string) => void;
+  onProgress?: (label: string, count: number) => void;
+  /** 食品分段抓取每段筆數（TransService 實測 $top=10000 有效） */
+  foodPageSize?: number;
+}
+
+/** 食品全量抓取：$top/$skip 分段迴圈，直到回傳筆數不足一段才停止 */
+export async function fetchAllFood(
+  options: FetchAllOptions = {}
+): Promise<RawFoodRecord[]> {
+  const {
+    maxRetries = 3,
+    baselineFood,
+    fetchFn = fetch,
+    onProgress,
+    foodPageSize = 10000,
+  } = options;
+
+  const all: RawFoodRecord[] = [];
+  let skip = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const url = `${FOOD_ENDPOINT}&$top=${foodPageSize}&$skip=${skip}`;
+    const chunk = (await fetchWithRetry(url, maxRetries, fetchFn)) as RawFoodRecord[];
+    if (skip === 0 && chunk.length > 0) {
+      checkFields(chunk, EXPECTED_FOOD_FIELDS as string[], 'food');
+    }
+    all.push(...chunk);
+    if (onProgress) onProgress('food', all.length);
+    if (chunk.length < foodPageSize) break;
+    skip += chunk.length;
+  }
+  validateSource(all, baselineFood, { label: 'food', minAllowedDrop: 0.1 });
+  return all;
 }
 
 export async function fetchAllSources(
@@ -133,12 +165,10 @@ export async function fetchAllSources(
 ): Promise<{ food: RawFoodRecord[]; vendors: RawVendorRecord[] }> {
   const { maxRetries = 3, baselineFood, baselineVendors, fetchFn = fetch, onProgress } = options;
 
-  if (onProgress) onProgress('food');
-  const food = (await fetchWithRetry(FOOD_ENDPOINT, maxRetries, fetchFn)) as RawFoodRecord[];
-  checkFields(food, EXPECTED_FOOD_FIELDS as string[], 'food');
-  validateSource(food, baselineFood, { label: 'food', minAllowedDrop: 0.1 });
+  if (onProgress) onProgress('food', 0);
+  const food = await fetchAllFood({ maxRetries, baselineFood, fetchFn, onProgress, foodPageSize: options.foodPageSize });
 
-  if (onProgress) onProgress('vendors');
+  if (onProgress) onProgress('vendors', 0);
   const vendors = (await fetchWithRetry(VENDOR_ENDPOINT, maxRetries, fetchFn)) as RawVendorRecord[];
   checkFields(vendors, EXPECTED_VENDOR_FIELDS as string[], 'vendor');
   validateSource(vendors, baselineVendors, { label: 'vendors', minAllowedDrop: 0.1 });

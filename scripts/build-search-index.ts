@@ -1,15 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import MiniSearch from 'minisearch';
 import type { PetFood } from '../src/types/petfood.js';
-import { cjkBigramTokenizer } from '../src/lib/search-tokenizer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 
 const productsPath = path.join(projectRoot, 'data', 'products.json');
+const metaPath = path.join(projectRoot, 'data', 'meta.json');
 const indexOutPath = path.join(projectRoot, 'public', 'data', 'search-index.json');
 
 function main() {
@@ -21,40 +20,28 @@ function main() {
   }
 
   const products: PetFood[] = JSON.parse(fs.readFileSync(productsPath, 'utf8'));
+  const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
 
-  const miniSearch = new MiniSearch({
-    fields: ['name', 'materials', 'nutrients', 'vendorName', 'id', 'usagePets'],
-    storeFields: ['id', 'name', 'item', 'source', 'origin', 'pets', 'usagePets', 'vendorName', 'vendorRegistered'],
-    tokenize: cjkBigramTokenizer,
-    searchOptions: {
-      boost: { name: 3, vendorName: 2, materials: 1.5 },
-      fuzzy: 0.2,
-      prefix: true,
-    },
-  });
-
-  miniSearch.addAll(
-    products.map((p) => ({
-      id: p.id,
-      name: p.name,
-      materials: p.materials,
-      nutrients: p.nutrients,
-      vendorName: p.vendorName,
-      usagePets: p.usagePets,
-      item: p.item,
-      source: p.source,
-      origin: p.origin,
-      pets: p.pets,
-    }))
-  );
+  // 精簡文件陣列：只保留卡片顯示與查詢比對所需欄位（長文本原料/營養成分不進索引，詳情由分片載入）
+  const docs = products.map((p) => ({
+    id: p.id,
+    name: p.name,
+    item: p.item,
+    source: p.source,
+    origin: p.origin,
+    pets: p.pets,
+    usagePets: p.usagePets,
+    vendorName: p.vendorName,
+    vendorRegistered: p.vendorRegistered,
+  }));
 
   const outDir = path.dirname(indexOutPath);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(indexOutPath, JSON.stringify(miniSearch.toJSON()), 'utf8');
+  fs.writeFileSync(indexOutPath, JSON.stringify({ version: meta.fetchedAt ?? null, count: docs.length, docs }), 'utf8');
 
   const bytes = fs.statSync(indexOutPath).size;
   console.log(
-    `[build-search-index] 索引完成：${products.length} 筆，${(bytes / 1024 / 1024).toFixed(2)} MB → ${indexOutPath}`
+    `[build-search-index] 索引完成：${docs.length} 筆，${(bytes / 1024 / 1024).toFixed(2)} MB → ${indexOutPath}`
   );
 }
 

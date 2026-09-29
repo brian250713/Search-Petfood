@@ -12,7 +12,7 @@ const foodTotal = (productsData as unknown[]).length;
     <div class="card" style="background: linear-gradient(to bottom, #ffffff, var(--primary-light)); padding: 1.5rem;">
       <h1 style="font-size: 1.5rem; color: var(--primary-hover); margin-bottom: 0.5rem;">寵物食品檢索</h1>
       <p style="font-size: 0.9rem; color: #4b5563; margin-bottom: 1rem;">
-        支援品名、主要原料、營養成分、廠商名稱與食品序號模糊搜尋，可依種類、適用寵物、產品來源與原產地篩選。
+        支援品名、廠商名稱、食品序號與適用寵物文字模糊搜尋，可依種類、適用寵物、產品來源與原產地篩選。（原料與營養成分請進食品詳情查看。）
       </p>
 
       <div style="position: relative;">
@@ -162,7 +162,7 @@ const foodTotal = (productsData as unknown[]).length;
       try {
         const res = await fetch(dataUrl('data/search-index.json', dataVersion));
         const json = await res.json();
-        allLoadedDocs = Object.values(json.storedFields || {});
+        allLoadedDocs = json.docs || [];
         isIndexLoaded = true;
       } catch (e) {
         console.error('Failed to load search index:', e);
@@ -217,7 +217,7 @@ const foodTotal = (productsData as unknown[]).length;
         const queryTokens = cjkTokenizer(state.query);
         if (queryTokens.length > 0) {
           candidates = candidates.filter(doc => {
-            const allText = `${doc.name || ''} ${doc.materials || ''} ${doc.nutrients || ''} ${doc.vendorName || ''} ${doc.id || ''} ${doc.usagePets || ''}`.toLowerCase();
+            const allText = `${doc.name || ''} ${doc.vendorName || ''} ${doc.id || ''} ${doc.usagePets || ''} ${doc.item || ''}`.toLowerCase();
             return queryTokens.every(tok => allText.includes(tok));
           });
         }

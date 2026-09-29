@@ -13,6 +13,9 @@ data/vendors.json
 data/meta.json
 data/build-log.json
 
+# Generated search index & shards (rebuilt by `pnpm normalize` in CI)
+public/data/
+
 # Environment & logs
 .env
 .env.*

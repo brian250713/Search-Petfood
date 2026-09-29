@@ -8,12 +8,17 @@ Define how the site fetches the two MOA open datasets (pet food and pet food ven
 
 ### Requirement: Dual-source fetch
 
-The system SHALL fetch both datasets from MOA TransService (`UnitId=wxV177kLhEE3` for food, `UnitId=6GNl6qsdx4nx` for vendors) and write them to `data/raw-food.json` and `data/raw-vendors.json`. Each fetch MUST retry failed HTTP requests up to 3 times with backoff before failing.
+The system SHALL fetch both datasets from MOA TransService (`UnitId=wxV177kLhEE3` for food, `UnitId=6GNl6qsdx4nx` for vendors) and write them to `data/raw-food.json` and `data/raw-vendors.json`. Food fetch MUST page with `$top=10000&$skip=N`, looping until a returned page is shorter than the page size. Each fetch MUST retry failed HTTP requests up to 3 times with backoff before failing.
 
 #### Scenario: Successful fetch
 
 - **WHEN** `pnpm run fetch` runs with both MOA endpoints reachable
-- **THEN** `data/raw-food.json` contains the full food array and `data/raw-vendors.json` contains the full vendor array, and the command exits 0
+- **THEN** `data/raw-food.json` contains the full food array (all pages concatenated, ~102000 records) and `data/raw-vendors.json` contains the full vendor array, and the command exits 0
+
+#### Scenario: Segmented stop
+
+- **WHEN** a food page returns fewer than 10000 records
+- **THEN** pagination stops and no further `$skip` request is made
 
 #### Scenario: Retry then fail
 

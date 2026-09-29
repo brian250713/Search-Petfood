@@ -8,17 +8,17 @@ Define the homepage search experience that lets pet owners quickly find foods by
 
 ### Requirement: Full-text search
 
-The system SHALL provide homepage full-text search over product name, ingredients/materials (`fmat`), nutrients (`fnut`), vendor name, and product ID, executed in the browser with a lazily loaded MiniSearch index. Typing a query MUST update results without a page reload, and an empty query MUST show the full browsable list.
+The system SHALL provide homepage full-text search over product name, vendor name, usage-pet text, food category, and product ID, executed in the browser with a lazily loaded compact JSON doc index. Typing a query MUST update results without a page reload, and an empty query MUST show the full browsable list. Raw-material (`fmat`) and nutrient (`fnut`) long text SHALL NOT be query-matched (index stays shippable at ~100k records); their full text remains visible on the food detail page.
 
 #### Scenario: Name search
 
 - **WHEN** the user types `雞胸肉`
 - **THEN** `VE凍乾鮮肉零食-低脂雞胸肉` appears in results
 
-#### Scenario: Ingredient search
+#### Scenario: Vendor search
 
-- **WHEN** the user types `雞肝`
-- **THEN** foods whose `fmat` contains `雞肝` appear in results
+- **WHEN** the user types `極寵`
+- **THEN** foods whose vendor is `極寵有限公司` appear in results
 
 #### Scenario: Empty query
 

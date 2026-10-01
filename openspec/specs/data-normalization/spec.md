@@ -49,7 +49,7 @@ The system SHALL normalize vendor records keyed by normalized `legalname` (trimm
 
 ### Requirement: Index and shard output
 
-The system SHALL emit `public/data/search-index.json` as a compact document index containing a version stamp, a document count, and a documents array, where each document carries only the fields needed to render a result card and to match a query (product ID, name, food category, product source, origin, normalized pet types, usage-pet text, vendor name, vendor-registered flag). The index MUST NOT include raw-material (`fmat`) or nutrient (`fnut`) long text, so that the index stays loadable at approximately 100k records; that full text remains available through the food shards. The system SHALL also emit FNV-1a sharded `public/data/food/NNN.json` (128 shards) plus `public/data/vendor/NNN.json` (64 shards), plus `data/vendors.json` summary list. Shard counts and byte sizes MUST be recorded in `build-log.json`.
+The system SHALL emit `public/data/search-index.json` as a compact document index in v2 dictionary-encoded row format: a `format` marker (`2`), a version stamp, a document count, string dictionaries for food category, product source, origin, usage-pet text, and vendor name, plus a documents array of compact rows `[id, name, itemIdx, sourceIdx, originIdx, petsMask, usageIdx, vendorIdx, registeredFlag]` where `petsMask` is a bitmask (`犬=1`, `貓=2`, `其他=4`). Each document MUST carry only the fields needed to render a result card and to match a query (product ID, name, food category, product source, origin, normalized pet types, usage-pet text, vendor name, vendor-registered flag). The index MUST NOT include raw-material (`fmat`) or nutrient (`fnut`) long text, so that the index stays loadable at approximately 100k records (target: raw JSON under 10 MB for ~100k products); that full text remains available through the food shards. The homepage decoder MUST accept both the v2 row format and the legacy object-array format. The system SHALL also emit FNV-1a sharded `public/data/food/NNN.json` (128 shards) plus `public/data/vendor/NNN.json` (64 shards), plus `data/vendors.json` summary list. Shard counts and byte sizes MUST be recorded in `build-log.json`.
 
 #### Scenario: Shard lookup
 
@@ -59,7 +59,7 @@ The system SHALL emit `public/data/search-index.json` as a compact document inde
 #### Scenario: Index shape
 
 - **WHEN** the search index is built
-- **THEN** the file contains a version stamp, the document count matching the number of emitted documents, and a documents array in which no entry contains raw-material or nutrient text
+- **THEN** the file carries `format: 2`, a version stamp, the document count matching the number of emitted documents, string dictionaries, and compact document rows in which no entry contains raw-material or nutrient text, and decoding the rows reproduces every document field exactly
 
 #### Scenario: Index size stays loadable
 

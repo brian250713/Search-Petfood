@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shardOf, FOOD_SHARDS, VENDOR_SHARDS } from '../src/lib/shard.js';
+import { decodeSearchIndex } from '../src/lib/search-index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,10 +25,21 @@ function main() {
   if (vendorFiles.length !== VENDOR_SHARDS) fail(`業者分片數 ${vendorFiles.length}，預期 ${VENDOR_SHARDS}`);
   console.log(`[verify] 分片數量 OK：食品 ${foodFiles.length} / 業者 ${vendorFiles.length}`);
 
-  // 2. 搜尋索引存在且非空
+  // 2. 搜尋索引存在且非空，且可解碼、筆數與 products 一致
   const indexPath = path.join(projectRoot, 'public', 'data', 'search-index.json');
   if (!fs.existsSync(indexPath) || fs.statSync(indexPath).size === 0) fail('search-index.json 不存在或為空');
-  console.log('[verify] search-index.json OK');
+  const productsForIndex = JSON.parse(fs.readFileSync(path.join(projectRoot, 'data', 'products.json'), 'utf8'));
+  const decoded = decodeSearchIndex(JSON.parse(fs.readFileSync(indexPath, 'utf8')));
+  if (decoded.length !== productsForIndex.length) {
+    fail(`search-index 筆數 ${decoded.length}，預期 ${productsForIndex.length}`);
+  }
+  const sample = decoded[0];
+  for (const key of ['id', 'name', 'item', 'source', 'origin', 'pets', 'usagePets', 'vendorName', 'vendorRegistered', '_s']) {
+    if (!(key in sample)) fail(`search-index 缺少欄位 ${key}`);
+  }
+  console.log(
+    `[verify] search-index.json OK（${decoded.length} 筆，${(fs.statSync(indexPath).size / 1024 / 1024).toFixed(2)} MB）`
+  );
 
   // 3. 抽樣查找：products.json 前 3 筆 ID 可在對應分片找到；vendors-summary 前 3 家可在分片找到
   const products = JSON.parse(fs.readFileSync(path.join(projectRoot, 'data', 'products.json'), 'utf8'));

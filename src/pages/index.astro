@@ -127,23 +127,15 @@ const foodTotal = (productsData as unknown[]).length;
     import { escapeHtml } from '../lib/escape-html';
     import { foodUrl, dataUrl } from '../lib/url';
     import { renderVendorLink } from '../lib/render-vendor';
+    import { decodeSearchIndex } from '../lib/search-index';
+    import { searchDocs, stateKey } from '../lib/search-query';
 
     const appEl = document.getElementById('search-app');
     const dataVersion = appEl?.getAttribute('data-version') || undefined;
 
-    function cjkTokenizer(text) {
-      if (!text) return [];
-      const norm = text.toLowerCase();
-      const tokens = [];
-      const nonCjk = norm.split(/[^a-z0-9]+/i).filter(Boolean);
-      tokens.push(...nonCjk);
-      const cjkSegs = norm.match(/[\u4e00-\u9fa5]+/g) || [];
-      for (const seg of cjkSegs) {
-        for (let i = 0; i < seg.length; i++) tokens.push(seg[i]);
-        for (let i = 0; i < seg.length - 1; i++) tokens.push(seg.slice(i, i + 2));
-      }
-      return tokens;
-    }
+    const searchCache = new Map();
+    const SEARCH_CACHE_LIMIT = 50;
+    let lastSearchKey = null;
 
     let allLoadedDocs = [];
     let isIndexLoaded = false;
@@ -162,7 +154,7 @@ const foodTotal = (productsData as unknown[]).length;
       try {
         const res = await fetch(dataUrl('data/search-index.json', dataVersion));
         const json = await res.json();
-        allLoadedDocs = json.docs || [];
+        allLoadedDocs = decodeSearchIndex(json);
         isIndexLoaded = true;
       } catch (e) {
         console.error('Failed to load search index:', e);
@@ -211,25 +203,19 @@ const foodTotal = (productsData as unknown[]).length;
       const state = getFilterState();
       syncStateToUrl(state);
 
-      let candidates = allLoadedDocs;
+      // 狀態未變（例如重選相同篩選值）直接跳過；命中快取（退格/來回輸入）省掉整趟掃描
+      const key = stateKey(state);
+      if (key === lastSearchKey) return;
+      lastSearchKey = key;
 
-      if (state.query) {
-        const queryTokens = cjkTokenizer(state.query);
-        if (queryTokens.length > 0) {
-          candidates = candidates.filter(doc => {
-            const allText = `${doc.name || ''} ${doc.vendorName || ''} ${doc.id || ''} ${doc.usagePets || ''} ${doc.item || ''}`.toLowerCase();
-            return queryTokens.every(tok => allText.includes(tok));
-          });
+      let filtered = searchCache.get(key);
+      if (!filtered) {
+        filtered = searchDocs(allLoadedDocs, state);
+        searchCache.set(key, filtered);
+        if (searchCache.size > SEARCH_CACHE_LIMIT) {
+          searchCache.delete(searchCache.keys().next().value);
         }
       }
-
-      const filtered = candidates.filter(doc => {
-        if (state.item && doc.item !== state.item) return false;
-        if (state.pet && !(doc.pets || []).includes(state.pet)) return false;
-        if (state.source && doc.source !== state.source) return false;
-        if (state.origin && doc.origin !== state.origin) return false;
-        return true;
-      });
 
       currentFilteredList = filtered;
       currentPage = 1;

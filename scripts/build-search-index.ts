@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { PetFood } from '../src/types/petfood.js';
+import type { FoodSummary, PetFood } from '../src/types/petfood.js';
+import { encodeSearchIndex } from '../src/lib/search-index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,8 +23,9 @@ function main() {
   const products: PetFood[] = JSON.parse(fs.readFileSync(productsPath, 'utf8'));
   const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
 
-  // 精簡文件陣列：只保留卡片顯示與查詢比對所需欄位（長文本原料/營養成分不進索引，詳情由分片載入）
-  const docs = products.map((p) => ({
+  // 精簡文件：卡片顯示與查詢比對所需欄位（長文本原料/營養成分不進索引，詳情由分片載入）。
+  // v2 格式為字典編碼 + 陣列列存，省掉每筆重複鍵名與重複字串（約 24MB → 8MB）。
+  const summaries: FoodSummary[] = products.map((p) => ({
     id: p.id,
     name: p.name,
     item: p.item,
@@ -37,11 +39,12 @@ function main() {
 
   const outDir = path.dirname(indexOutPath);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(indexOutPath, JSON.stringify({ version: meta.fetchedAt ?? null, count: docs.length, docs }), 'utf8');
+  const index = encodeSearchIndex(summaries, meta.fetchedAt ?? null);
+  fs.writeFileSync(indexOutPath, JSON.stringify(index), 'utf8');
 
   const bytes = fs.statSync(indexOutPath).size;
   console.log(
-    `[build-search-index] 索引完成：${docs.length} 筆，${(bytes / 1024 / 1024).toFixed(2)} MB → ${indexOutPath}`
+    `[build-search-index] 索引完成（v2 字典+列存）：${index.count} 筆，${(bytes / 1024 / 1024).toFixed(2)} MB → ${indexOutPath}`
   );
 }
 

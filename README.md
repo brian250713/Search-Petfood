@@ -53,7 +53,7 @@ pnpm dev
 
 ## 部署
 
-`.github/workflows/deploy.yml` 在推送到 `main`、每天 02:00 UTC 排程，或手動觸發時執行：抓取 → 標準化 → 測試 → 建置 → 驗證 → 部署到 GitHub Pages，完成後更新 `data/baseline.json`。任一步驟失敗就不部署，線上版本維持不變。
+`.github/workflows/deploy.yml` 在推送到 `main`、每天 02:00 UTC 排程，或手動觸發時執行：抓取（每次執行只向 MOA 抓取一次全量資料） → 標準化 → 測試 → 建置 → 驗證 → 部署到 GitHub Pages。部署成功後，基準更新步驟會下載建置階段上傳的 raw 快照來更新 `data/baseline.json`，不再重新抓取，因此基準筆數即為實際部署的資料筆數。任一步驟失敗就不部署，線上版本維持不變。
 
 ## 資料來源與授權
 

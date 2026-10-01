@@ -12,6 +12,7 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: 'pages'
@@ -53,6 +54,16 @@ jobs:
       - name: 5. Verify release
         run: pnpm verify
 
+      - name: Upload raw data for baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-data
+          path: |
+            data/raw-food.json
+            data/raw-vendors.json
+          retention-days: 1
+          if-no-files-found: error
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
@@ -93,10 +104,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Fetch and update baseline
-        run: |
-          pnpm run fetch
-          pnpm tsx scripts/update-baseline.ts
+      - name: Download raw data from build
+        uses: actions/download-artifact@v4
+        with:
+          name: raw-data
+          path: data
+
+      - name: Update baseline from build output
+        run: pnpm tsx scripts/update-baseline.ts
 
       - name: Commit & push updated baseline
         run: |

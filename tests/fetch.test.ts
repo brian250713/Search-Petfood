@@ -4,6 +4,7 @@ import {
   fetchAllFood,
   validateSource,
   FetchError,
+  MOA_FOOD_RESPONSE_CEILING,
   EXPECTED_FOOD_FIELDS,
   EXPECTED_VENDOR_FIELDS,
 } from '../src/lib/fetcher.js';
@@ -59,6 +60,21 @@ describe('fetchAllFood', () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
+  it('rejects when a later page is missing an expected field', async () => {
+    // 首頁滿頁且合法；第二頁缺 flegalname，模擬 MOA 中途改 schema
+    const missing = rec('B2') as any;
+    delete missing.flegalname;
+    const pages = [[rec('B1'), rec('B2')], [missing]];
+    const fn = vi.fn(async (url: string) => {
+      const skip = Number(new URL(url).searchParams.get('$skip') || '0');
+      const rows = pages[skip / 2] ?? [];
+      return { ok: true, text: async () => JSON.stringify(rows) } as any;
+    });
+
+    await expect(fetchAllFood({ foodPageSize: 2, fetchFn: fn as any })).rejects.toThrow(FetchError);
+    await expect(fetchAllFood({ foodPageSize: 2, fetchFn: fn as any })).rejects.toThrow(/flegalname/);
+  });
+
   it('fails when total drops >10% vs baseline', async () => {
     const fn = vi.fn(async () => ({ ok: true, text: async () => '[]' }) as any);
     await expect(fetchAllFood({ foodPageSize: 2, baselineFood: 100, fetchFn: fn as any })).rejects.toThrow(
@@ -76,13 +92,31 @@ describe('validateSource', () => {
     ).not.toThrow();
   });
 
-  it('warns but passes on exactly 9999 food records', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  // 傳入真實生產基準 102278，讓測試走 CI 實際的守衛順序：
+  // 上限檢查先於基準比較，兩者都會拋錯，但訊息必須明確指出上限。
+  it('fails when the food count hits the MOA response ceiling', () => {
     expect(() =>
-      validateSource(new Array(9999), 9999, { label: 'food', minAllowedDrop: 0.1 })
+      validateSource(new Array(MOA_FOOD_RESPONSE_CEILING), 102278, {
+        label: 'food',
+        minAllowedDrop: 0.1,
+      })
+    ).toThrow(/response ceiling of 9999/);
+  });
+
+  it('fails on the ceiling even without a baseline', () => {
+    expect(() =>
+      validateSource(new Array(MOA_FOOD_RESPONSE_CEILING), undefined, {
+        label: 'food',
+        minAllowedDrop: 0.1,
+      })
+    ).toThrow(/response ceiling of 9999/);
+  });
+
+  it('passes a legitimate count just above the ceiling', () => {
+    const count = MOA_FOOD_RESPONSE_CEILING + 1;
+    expect(() =>
+      validateSource(new Array(count), count, { label: 'food', minAllowedDrop: 0.1 })
     ).not.toThrow();
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
   });
 });
 

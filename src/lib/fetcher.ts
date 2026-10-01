@@ -90,6 +90,12 @@ function checkFields(
   }
 }
 
+/**
+ * MOA TransService 已知回傳筆數上限。此值為平台限制，非可調參數；
+ * 食品抓取若恰為此筆數即代表回應遭截斷，必須失敗而非寫入不完整快照。
+ */
+export const MOA_FOOD_RESPONSE_CEILING = 9999;
+
 export interface SourceCheck {
   label: string;
   minAllowedDrop: number;
@@ -103,11 +109,14 @@ export function validateSource(
   if (records.length === 0) {
     throw new FetchError(`Validation failed: No ${check.label} records fetched.`);
   }
-  // 食品筆數恰為 9999 疑似平台截斷：警告但不中斷（TransService 為單次全量回傳，
-  // 無分頁參數可續抓；筆數記入 baseline 供漂移偵測）。
-  if (check.label === 'food' && records.length === 9999) {
-    console.warn(
-      '[fetch] 警告：食品筆數恰為 9999，可能為平台截斷上限，已記錄並繼續。'
+  // 食品筆數恰為 MOA_FOOD_RESPONSE_CEILING 代表撞到平台已知回傳上限，資料不完整。
+  // 此檢查刻意置於基準比較之前且不依賴 baselineCount：首次執行沒有
+  // data/baseline.json 時若放行，截斷的 raw 快照會被當成完整資料寫入。
+  if (check.label === 'food' && records.length === MOA_FOOD_RESPONSE_CEILING) {
+    throw new FetchError(
+      `Validation failed: ${check.label} records (${records.length}) hit the MOA TransService ` +
+        `response ceiling of ${MOA_FOOD_RESPONSE_CEILING}, indicating a truncated response. ` +
+        `No raw file was written.`
     );
   }
   if (baselineCount !== undefined && baselineCount > 0) {
@@ -148,9 +157,7 @@ export async function fetchAllFood(
   while (true) {
     const url = `${FOOD_ENDPOINT}&$top=${foodPageSize}&$skip=${skip}`;
     const chunk = (await fetchWithRetry(url, maxRetries, fetchFn)) as RawFoodRecord[];
-    if (skip === 0 && chunk.length > 0) {
-      checkFields(chunk, EXPECTED_FOOD_FIELDS as string[], 'food');
-    }
+    checkFields(chunk, EXPECTED_FOOD_FIELDS as string[], 'food');
     all.push(...chunk);
     if (onProgress) onProgress('food', all.length);
     if (chunk.length < foodPageSize) break;
